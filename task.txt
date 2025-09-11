@@ -1,0 +1,81 @@
+24H AI/ML Developer Take-Home Test
+Theme: Building a Vertical AI Agent for Law Research Assistance
+ Principles: Retrieval-Augmented Generation (RAG), domain-specific knowledge, AI orchestration, caching, real-time streaming, production deployment.
+Part 1 – Core Challenge (12–14h)
+Build a Law Research Assistance Agent
+Requirements:
+Legal Document Ingestion & Storage
+
+
+Ingest a small set of legal texts (e.g., 3–5 public law PDFs, acts, or case rulings).
+Store embeddings in pgvector (Postgres).
+
+
+Agent Orchestration
+
+
+Implement an agent with LangChain or LangGraph.
+Workflow: Retriever → RAG → Response Generator.
+Add at least one tool (e.g., Case summarizer, Citation extractor, or Web legal search).
+
+
+API Layer
+
+
+FastAPI endpoints:
+/query: Accepts a legal question → returns answer + citations/sources.
+/stream: Streams model tokens via WebSocket or SSE.
+
+
+Performance
+
+
+Add Redis caching (cache query → response).
+Optimize for <300ms response time on repeated queries.
+
+
+Deployment
+
+
+Use Docker Compose (Postgres + pgvector, Redis, FastAPI, API container).
+Instructions in a clear README.
+
+
+Part 2 – Legal Text Classification Tool (3–4h)
+Build a classification model (Scikit-learn or PyTorch) that can categorize a text passage into:
+Constitutional Law
+Criminal Law
+Contract Law
+Other
+
+
+Expose it as a tool that the agent can call when uncertain about a retrieved passage.
+The tool should return: {"category": "...", "confidence": ...}
+
+
+Part 3 – System Design Document (2–3h)
+Prepare a short technical architecture doc (3–4 pages) covering:
+Agent flow (retriever, generator, classification tool, cache).
+Why RAG > Fine-tuning for law.
+How to scale to 10k concurrent requests.
+Tradeoffs: pgvector vs FAISS vs Pinecone for legal search.
+Failure handling (e.g., missing embeddings, DB crash, API rate limits).
+Future extensions: compliance checking, precedent reasoning, multilingual legal support.
+
+
+Part 4 – Knowledge Questions (1–2h)
+Answer briefly (≤1 page each):
+Legal RAG vs Generic RAG: What makes building legal assistants harder (hallucination, citation accuracy, domain trust)?
+Caching: Suggest at least two caching layers for law-specific RAG (query embeddings, retrieved docs, final response).
+AI Orchestration: Why is LangGraph better than plain chains for multi-step legal reasoning?
+Bias & Safety: How would you prevent harmful/misleading outputs in legal contexts?
+
+
+
+Evaluation Criteria
+Code Quality: Clean, modular, Dockerized, documented.
+Agent Architecture: Proper orchestration, tool usage, caching.
+Domain Awareness: Legal-specific reasoning, source attribution, minimal hallucination.
+Scalability & Reliability: Handles concurrency, caching, error recovery.
+Communication: Clear docs, diagrams, tradeoff discussions.
+

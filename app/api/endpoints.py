@@ -1,0 +1,618 @@
+"""
+API endpoint definitions for legal research operations.
+
+Provides RESTful endpoints for query processing, document ingestion, health checks,
+and streaming responses with rate limiting and comprehensive error handling.
+"""
+
+import time
+import logging
+from typing import List, Dict, Any
+from fastapi import APIRouter, UploadFile, File, Body, Request, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
+import json
+import asyncio
+
+from ..core.config import settings
+from ..core.database import db_manager
+from ..core.rate_limiter import rate_limiter
+from ..core.response_formatter import response_formatter
+from ..core.exceptions import RateLimitExceededError, QueryProcessingError
+from ..models.requests import (
+    LegalQueryRequest,
+    LegalQueryResponse,
+    PDFIngestionResponse,
+    HealthCheckResponse,
+    ServiceInfoResponse,
+    MultiHopReasoningResponse,
+    ReasoningStepResponse,
+    ReasoningChainRequest
+)
+from ..services.lightweight_llm_rag import lightweight_llm_rag
+from ..services.legal_tools import legal_response_analyzer
+from ..services.pdf_ingestion import pdf_ingestion_service
+from ..services.langchain_agent import langchain_legal_agent
+from ..services.multi_hop_reasoning import multi_hop_reasoning_engine
+from ..services.query_complexity_detector import query_complexity_detector
+from ..services.reasoning_chain_storage import reasoning_chain_storage
+
+logger = logging.getLogger(__name__)
+
+# Create router for API endpoints
+router = APIRouter()
+
+
+@router.get("/", response_model=ServiceInfoResponse)
+async def get_service_info():
+    """
+    Get basic service information and available endpoints.
+    
+    Returns:
+        ServiceInfoResponse: Service information including version and endpoints
+    """
+    return ServiceInfoResponse(
+        service="Legal Research Assistant",
+        version="1.0.0",
+        status="running",
+        endpoints={
+            "query": "/query (JSON by default, text with text_only=true)",
+            "query-json": "/query-json (always JSON)",
+            "query-text": "/query-text (text only, deprecated)",
+            "stream": "/stream", 
+            "ingest": "/ingest-pdfs",
+            "health": "/health",
+            "docs": "/docs"
+        }
+    )
+
+
+@router.get("/health", response_model=HealthCheckResponse)
+async def health_check():
+    """
+    Perform comprehensive health check of the system.
+    
+    Returns:
+        HealthCheckResponse: Health status of all system components
+    """
+    try:
+        database_healthy = await db_manager.health_check()
+        
+        return HealthCheckResponse(
+            status="healthy" if database_healthy else "degraded",
+            timestamp=time.time(),
+            database="connected" if database_healthy else "disconnected",
+            services={
+                "rag_engine": "available",
+                "legal_tools": "available",
+                "pdf_ingestion": "available"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return HealthCheckResponse(
+            status="unhealthy",
+            timestamp=time.time(),
+            database="unknown",
+            services={},
+            error=str(e)
+        )
+
+
+@router.post("/query")
+async def process_legal_query(request: Request, payload: LegalQueryRequest = Body(...)):
+    """
+    Process a legal research query using RAG or agent-based approach.
+    
+    Args:
+        request: FastAPI request object for client IP
+        payload: Legal query request with parameters
+        
+    Returns:
+        LegalQueryResponse or str: Processed legal research response (JSON by default, text if text_only=True)
+        
+    Raises:
+        HTTPException: If rate limit exceeded or processing fails
+    """
+    client_ip = request.client.host
+    
+    try:
+        # Check rate limit
+        rate_limiter.check_and_record_request(client_ip)
+    except RateLimitExceededError as e:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "Rate limit exceeded",
+                "detail": e.message,
+                "retry_after": e.context.get("reset_time", 0) - time.time()
+            }
+        )
+    
+    try:
+        # Check if multi-hop reasoning should be used
+        should_use_multi_hop, complexity_analysis = query_complexity_detector.should_use_multi_hop_reasoning(payload.query)
+        
+        if (payload.enable_multi_hop_reasoning and should_use_multi_hop) or payload.force_multi_hop:
+            result = await _process_multi_hop_query(payload, complexity_analysis)
+        elif payload.use_agent:
+            result = await _process_agent_query(payload)
+        else:
+            result = await _process_rag_query(payload)
+        
+        # Return text-only response if requested
+        if payload.text_only:
+            if hasattr(result, 'response'):
+                return {"response": result.response}
+            elif hasattr(result, 'final_answer'):
+                return {"response": result.final_answer}
+            else:
+                return {"response": str(result)}
+        
+        # Return full JSON response by default
+        return result
+            
+    except Exception as e:
+        logger.error(f"Query processing failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=response_formatter.format_error_response(
+                str(e), 
+                "QUERY_PROCESSING_ERROR"
+            )
+        )
+
+
+@router.post("/query-text")
+async def process_text_only_query(payload: LegalQueryRequest = Body(...)):
+    """
+    Process a legal query and return only the formatted response text.
+    This endpoint is deprecated - use /query with text_only=true instead.
+    
+    Args:
+        payload: Legal query request
+        
+    Returns:
+        dict: Simple response with formatted text
+        
+    Raises:
+        HTTPException: If processing fails
+    """
+    try:
+        result = await lightweight_llm_rag.query(
+            query=payload.query,
+            top_k=payload.top_k,
+            use_agent=payload.use_agent,
+            algorithm=payload.algorithm.value,
+            similarity_threshold=payload.similarity_threshold,
+        )
+        
+        formatted_response = response_formatter.clean_text_for_display(
+            result.get("response", "")
+        )
+        
+        return {"response": formatted_response}
+        
+    except Exception as e:
+        logger.error(f"Text query failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=response_formatter.format_error_response(
+                str(e),
+                "TEXT_QUERY_ERROR"
+            )
+        )
+
+
+@router.post("/query-json", response_model=LegalQueryResponse)
+async def process_json_query(request: Request, payload: LegalQueryRequest = Body(...)):
+    """
+    Process a legal query and return the full JSON response structure.
+    This endpoint always returns JSON format regardless of text_only parameter.
+    
+    Args:
+        request: FastAPI request object for client IP
+        payload: Legal query request with parameters
+        
+    Returns:
+        LegalQueryResponse: Full structured legal research response
+        
+    Raises:
+        HTTPException: If rate limit exceeded or processing fails
+    """
+    # Override text_only to always return JSON
+    payload.text_only = False
+    return await process_legal_query(request, payload)
+
+
+@router.post("/stream")
+async def stream_legal_query(payload: LegalQueryRequest = Body(...)):
+    """
+    Stream legal research results with Server-Sent Events.
+    
+    Args:
+        payload: Legal query request
+        
+    Returns:
+        StreamingResponse: SSE stream with query results
+    """
+    async def generate_stream():
+        try:
+            yield f"data: {json.dumps({'status': 'processing', 'message': 'Starting legal research...'})}\n\n"
+            
+            if payload.use_agent:
+                result = await langchain_legal_agent.research(
+                    query=payload.query,
+                    session_id=f"stream_session_{int(time.time())}"
+                )
+                text = result.response
+                citations = result.citations
+                domain = result.domain
+            else:
+                result = await lightweight_llm_rag.query(
+                    query=payload.query,
+                    top_k=min(payload.top_k, 3),
+                    use_agent=False,
+                    algorithm="hybrid",
+                    similarity_threshold=payload.similarity_threshold,
+                )
+                text = result.get("response", "")
+                citations = []
+                domain = "Other"
+            
+            yield f"data: {json.dumps({'status': 'streaming', 'message': 'Streaming response...'})}\n\n"
+            
+            # Stream text in chunks
+            chunk_size = 100
+            for i in range(0, len(text), chunk_size):
+                chunk = text[i:i+chunk_size]
+                yield f"data: {json.dumps({'delta': chunk, 'type': 'content'})}\n\n"
+                await asyncio.sleep(0.05)
+            
+            # Send metadata
+            yield f"data: {json.dumps({'type': 'metadata', 'citations': citations, 'domain': domain})}\n\n"
+            
+            # Send completion signal
+            yield f"data: {json.dumps({'type': 'done', 'status': 'completed'})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Streaming failed: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        generate_stream(), 
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control"
+        }
+    )
+
+
+@router.post("/ingest-pdfs", response_model=PDFIngestionResponse)
+async def ingest_pdf_documents(files: List[UploadFile] = File(...)):
+    """
+    Ingest PDF documents into the legal knowledge base.
+    
+    Args:
+        files: List of uploaded PDF files
+        
+    Returns:
+        PDFIngestionResponse: Results of PDF ingestion
+        
+    Raises:
+        HTTPException: If ingestion fails
+    """
+    try:
+        temp_paths = []
+        
+        # Save uploaded files temporarily
+        for file in files:
+            if not file.filename.endswith('.pdf'):
+                continue
+                
+            temp_path = f"/tmp/{file.filename}"
+            with open(temp_path, "wb") as buffer:
+                content = await file.read()
+                buffer.write(content)
+            temp_paths.append(temp_path)
+        
+        # Ingest PDFs
+        document_ids = await pdf_ingestion_service.ingest_multiple_pdfs(
+            temp_paths, 
+            source="uploaded-pdf"
+        )
+        
+        # Clean up temporary files
+        import os
+        for path in temp_paths:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        
+        return PDFIngestionResponse(
+            message=f"Successfully ingested {len(document_ids)} PDF files",
+            document_ids=document_ids,
+            status="success"
+        )
+        
+    except Exception as e:
+        logger.error(f"PDF ingestion failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=response_formatter.format_error_response(
+                str(e),
+                "PDF_INGESTION_ERROR"
+            )
+        )
+
+
+async def _process_agent_query(payload: LegalQueryRequest) -> LegalQueryResponse:
+    """
+    Process query using the LangChain legal agent.
+    
+    Args:
+        payload: Legal query request
+        
+    Returns:
+        LegalQueryResponse: Agent-based response
+    """
+    agent_result = await langchain_legal_agent.research(
+        query=payload.query,
+        session_id=f"session_{int(time.time())}"
+    )
+    
+    return LegalQueryResponse(
+        response=agent_result.response,
+        query=payload.query,
+        context=agent_result.sources,
+        metadata={
+            "algorithm": "langchain_agent",
+            "citations": agent_result.citations,
+            "domain": agent_result.domain,
+            "confidence": agent_result.confidence,
+            "tools_used": agent_result.tools_used
+        },
+        source="legal_agent",
+        response_time_ms=0
+    )
+
+
+async def _process_rag_query(payload: LegalQueryRequest) -> LegalQueryResponse:
+    """
+    Process query using the RAG engine.
+    
+    Args:
+        payload: Legal query request
+        
+    Returns:
+        LegalQueryResponse: RAG-based response
+    """
+    result = await lightweight_llm_rag.query(
+        query=payload.query,
+        top_k=payload.top_k,
+        use_agent=payload.use_agent,
+        algorithm=payload.algorithm.value,
+        similarity_threshold=payload.similarity_threshold,
+    )
+    
+    # Analyze the response for legal annotations
+    annotations = legal_response_analyzer.analyze_response(
+        payload.query, 
+        result.get("response", ""), 
+        result.get("sources", [])
+    )
+    
+    # Format the response
+    formatted_response = response_formatter.clean_text_for_display(
+        result.get("response", "")
+    )
+    
+    return LegalQueryResponse(
+        response=formatted_response,
+        query=payload.query,
+        context=result.get("sources", []),
+        metadata={
+            "algorithm": payload.algorithm.value,
+            "citations": annotations.get("citations", []),
+            "domain": annotations.get("domain", "Other")
+        },
+        source="rag_engine",
+        response_time_ms=int(result.get("processing_time", 0) * 1000)
+    )
+
+
+async def _process_multi_hop_query(payload: LegalQueryRequest, complexity_analysis: Dict[str, Any]) -> MultiHopReasoningResponse:
+    """
+    Process query using multi-hop reasoning engine.
+    
+    Args:
+        payload: Legal query request
+        complexity_analysis: Query complexity analysis results
+        
+    Returns:
+        MultiHopReasoningResponse: Multi-hop reasoning response
+    """
+    try:
+        # Process with multi-hop reasoning engine
+        reasoning_chain = await multi_hop_reasoning_engine.process_complex_query(
+            query=payload.query,
+            session_id=payload.session_id
+        )
+        
+        # Store reasoning chain for future reference
+        await reasoning_chain_storage.store_reasoning_chain(reasoning_chain)
+        
+        # Convert reasoning steps to response format
+        reasoning_steps = []
+        for step in reasoning_chain.steps:
+            reasoning_steps.append(ReasoningStepResponse(
+                step_id=step.step_id,
+                step_type=step.step_type.value,
+                input_query=step.input_query,
+                output_result=step.output_result,
+                confidence_score=step.confidence_score,
+                execution_time=step.execution_time,
+                sources_used=step.sources_used
+            ))
+        
+        return MultiHopReasoningResponse(
+            chain_id=reasoning_chain.chain_id,
+            original_query=reasoning_chain.original_query,
+            complexity_level=reasoning_chain.complexity_level.value,
+            final_answer=reasoning_chain.final_answer,
+            reasoning_steps=reasoning_steps,
+            total_execution_time=reasoning_chain.total_execution_time,
+            overall_confidence=reasoning_chain.overall_confidence,
+            citations=reasoning_chain.citations,
+            metadata={
+                **reasoning_chain.metadata,
+                "complexity_analysis": complexity_analysis
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Multi-hop reasoning failed: {e}")
+        # Return error response
+        return MultiHopReasoningResponse(
+            chain_id="error",
+            original_query=payload.query,
+            complexity_level="error",
+            final_answer=f"Error in multi-hop reasoning: {str(e)}",
+            reasoning_steps=[],
+            total_execution_time=0.0,
+            overall_confidence=0.0,
+            citations=[],
+            metadata={"error": str(e)}
+        )
+
+
+@router.post("/reasoning-chains", response_model=List[MultiHopReasoningResponse])
+async def get_reasoning_chains(request: ReasoningChainRequest = Body(...)):
+    """
+    Retrieve reasoning chains by chain ID or session ID.
+    
+    Args:
+        request: Reasoning chain request with filters
+        
+    Returns:
+        List[MultiHopReasoningResponse]: List of reasoning chains
+    """
+    try:
+        chains = []
+        
+        if request.chain_id:
+            # Get specific chain
+            chain = await reasoning_chain_storage.retrieve_reasoning_chain(request.chain_id)
+            if chain:
+                chains.append(_convert_chain_to_response(chain))
+        elif request.session_id:
+            # Get chains for session
+            session_chains = await reasoning_chain_storage.get_reasoning_chains_by_session(
+                request.session_id, request.limit
+            )
+            chains = [_convert_chain_to_response(chain) for chain in session_chains]
+        
+        return chains
+        
+    except Exception as e:
+        logger.error(f"Failed to retrieve reasoning chains: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=response_formatter.format_error_response(
+                str(e), 
+                "REASONING_CHAIN_RETRIEVAL_ERROR"
+            )
+        )
+
+
+@router.get("/reasoning-chains/{chain_id}", response_model=MultiHopReasoningResponse)
+async def get_reasoning_chain(chain_id: str):
+    """
+    Get a specific reasoning chain by ID.
+    
+    Args:
+        chain_id: The reasoning chain ID
+        
+    Returns:
+        MultiHopReasoningResponse: The reasoning chain
+    """
+    try:
+        chain = await reasoning_chain_storage.retrieve_reasoning_chain(chain_id)
+        if not chain:
+            raise HTTPException(
+                status_code=404,
+                detail=response_formatter.format_error_response(
+                    f"Reasoning chain {chain_id} not found",
+                    "REASONING_CHAIN_NOT_FOUND"
+                )
+            )
+        
+        return _convert_chain_to_response(chain)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retrieve reasoning chain {chain_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=response_formatter.format_error_response(
+                str(e), 
+                "REASONING_CHAIN_RETRIEVAL_ERROR"
+            )
+        )
+
+
+@router.get("/reasoning-statistics")
+async def get_reasoning_statistics(days: int = 30):
+    """
+    Get reasoning statistics for the specified time period.
+    
+    Args:
+        days: Number of days to look back (default: 30)
+        
+    Returns:
+        Dict: Reasoning statistics
+    """
+    try:
+        stats = await reasoning_chain_storage.get_reasoning_statistics(days)
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Failed to get reasoning statistics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=response_formatter.format_error_response(
+                str(e), 
+                "REASONING_STATISTICS_ERROR"
+            )
+        )
+
+
+def _convert_chain_to_response(reasoning_chain) -> MultiHopReasoningResponse:
+    """Convert ReasoningChain to MultiHopReasoningResponse"""
+    reasoning_steps = []
+    for step in reasoning_chain.steps:
+        reasoning_steps.append(ReasoningStepResponse(
+            step_id=step.step_id,
+            step_type=step.step_type.value,
+            input_query=step.input_query,
+            output_result=step.output_result,
+            confidence_score=step.confidence_score,
+            execution_time=step.execution_time,
+            sources_used=step.sources_used
+        ))
+    
+    return MultiHopReasoningResponse(
+        chain_id=reasoning_chain.chain_id,
+        original_query=reasoning_chain.original_query,
+        complexity_level=reasoning_chain.complexity_level.value,
+        final_answer=reasoning_chain.final_answer,
+        reasoning_steps=reasoning_steps,
+        total_execution_time=reasoning_chain.total_execution_time,
+        overall_confidence=reasoning_chain.overall_confidence,
+        citations=reasoning_chain.citations,
+        metadata=reasoning_chain.metadata
+    )
