@@ -320,8 +320,6 @@ curl -X GET "http://localhost:8001/reasoning-statistics?days=30"
 python test_multi_hop_reasoning.py
 ```
 
-For detailed documentation on multi-hop reasoning, see [MULTI_HOP_REASONING.md](MULTI_HOP_REASONING.md).
-
 ## Database Management
 
 ### View All Documents
