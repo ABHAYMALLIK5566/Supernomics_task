@@ -101,7 +101,7 @@ This Legal Research Assistant is a production-ready RAG (Retrieval-Augmented Gen
 
 ### 1. Clone and Setup
 ```bash
-git clone <repository-url>
+git clone https://github.com/ABHAYMALLIK5566/Supernomics_task
 cd Supernomics_task
 cp env.example .env
 ```
