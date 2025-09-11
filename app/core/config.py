@@ -14,10 +14,10 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     """
-    Application settings with environment variable support and validation.
+    Application configuration with environment variable support.
     
-    Provides centralized configuration for all application components including
-    database connections, API keys, and service parameters with proper validation.
+    Manages all application settings including database connections, API keys,
+    service parameters, and feature flags with automatic validation.
     """
     app_name: str = "RAG Microservice"
     app_version: str = "1.0.0"
@@ -146,7 +146,12 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Get cached settings instance"""
+    """
+    Get cached settings instance.
+    
+    Returns:
+        Settings: Cached application settings instance
+    """
     return Settings()
 
 settings = get_settings() 

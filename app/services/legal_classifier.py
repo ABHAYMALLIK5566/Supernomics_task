@@ -18,7 +18,12 @@ logger = logging.getLogger(__name__)
 
 
 class LegalTextClassifier:
-    """Scikit-learn based legal text classifier"""
+    """
+    Legal text classification using machine learning.
+    
+    Uses TF-IDF vectorization and Random Forest to categorize legal text
+    into Constitutional, Criminal, Contract, or Other domains.
+    """
     
     def __init__(self):
         self.vectorizer = TfidfVectorizer(
@@ -40,7 +45,15 @@ class LegalTextClassifier:
         }
     
     def _create_training_data(self):
-        """Create training data for legal text classification from actual documents"""
+        """
+        Create training data from database documents.
+        
+        Attempts to extract training data from existing documents in the database,
+        falls back to predefined training data if insufficient documents available.
+        
+        Returns:
+            Dict: Training data with 'texts' and 'labels' keys
+        """
         import asyncio
         from pathlib import Path
         import sys
@@ -80,6 +93,7 @@ class LegalTextClassifier:
                     logger.warning(f"Could not get training data from database: {e}")
                     return None
             
+            # Handle async context - can't run async code if already in event loop
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
@@ -100,7 +114,17 @@ class LegalTextClassifier:
             return self._get_fallback_training_data()
     
     def _classify_document_content(self, content: str, source: str, title: str) -> int:
-        """Classify document content based on keywords and source"""
+        """
+        Classify document content using keyword matching.
+        
+        Args:
+            content: Document content text
+            source: Document source
+            title: Document title
+            
+        Returns:
+            int: Category label (0-3) based on keyword analysis
+        """
         content_lower = content.lower()
         source_lower = source.lower()
         title_lower = title.lower()
@@ -123,22 +147,30 @@ class LegalTextClassifier:
             'liability', 'indemnity', 'warranty', 'covenant', 'clause'
         ]
         
+        # Check constitutional law first (highest priority)
         if any(keyword in content_lower or keyword in source_lower or keyword in title_lower 
                for keyword in constitutional_keywords):
             return 0
         
+        # Check criminal law second
         if any(keyword in content_lower or keyword in source_lower or keyword in title_lower 
                for keyword in criminal_keywords):
             return 1
         
+        # Check contract law third
         if any(keyword in content_lower or keyword in source_lower or keyword in title_lower 
                for keyword in contract_keywords):
             return 2
         
-        return 3
+        return 3  # Default to "Other" category
     
     def _get_fallback_training_data(self):
-        """Fallback training data when no documents are available"""
+        """
+        Get fallback training data when database is unavailable.
+        
+        Returns:
+            Dict: Predefined training data with 'texts' and 'labels' keys
+        """
         return {
             "texts": [
                 "The First Amendment protects freedom of speech and religion",
@@ -186,7 +218,11 @@ class LegalTextClassifier:
         }
     
     def train(self):
-        """Train the classification model"""
+        """
+        Train the legal text classification model.
+        
+        Uses training data to fit the TF-IDF vectorizer and Random Forest classifier.
+        """
         try:
             training_data = self._create_training_data()
             
@@ -212,7 +248,15 @@ class LegalTextClassifier:
             raise
     
     def classify(self, text: str) -> Dict[str, Any]:
-        """Classify legal text and return category with confidence"""
+        """
+        Classify legal text into domain categories.
+        
+        Args:
+            text: Legal text to classify
+            
+        Returns:
+            Dict[str, Any]: Classification result with category and confidence score
+        """
         if not self.is_trained:
             self.train()
         
@@ -244,7 +288,12 @@ class LegalTextClassifier:
             }
     
     def save_model(self, filepath: str):
-        """Save the trained model"""
+        """
+        Save the trained model to disk.
+        
+        Args:
+            filepath: Path to save the model file
+        """
         if not self.is_trained:
             raise ValueError("Model must be trained before saving")
         
@@ -261,7 +310,12 @@ class LegalTextClassifier:
         logger.info(f"Model saved to {filepath}")
     
     def load_model(self, filepath: str):
-        """Load a trained model"""
+        """
+        Load a trained model from disk.
+        
+        Args:
+            filepath: Path to the model file
+        """
         try:
             with open(filepath, 'rb') as f:
                 model_data = pickle.load(f)

@@ -129,9 +129,9 @@ async def process_legal_query(request: Request, payload: LegalQueryRequest = Bod
         )
     
     try:
-        # Check if multi-hop reasoning should be used
         should_use_multi_hop, complexity_analysis = query_complexity_detector.should_use_multi_hop_reasoning(payload.query)
         
+        # Route to appropriate processing pipeline based on complexity and user preferences
         if (payload.enable_multi_hop_reasoning and should_use_multi_hop) or payload.force_multi_hop:
             result = await _process_multi_hop_query(payload, complexity_analysis)
         elif payload.use_agent:
@@ -139,7 +139,6 @@ async def process_legal_query(request: Request, payload: LegalQueryRequest = Bod
         else:
             result = await _process_rag_query(payload)
         
-        # Return text-only response if requested
         if payload.text_only:
             if hasattr(result, 'response'):
                 return {"response": result.response}
@@ -148,7 +147,6 @@ async def process_legal_query(request: Request, payload: LegalQueryRequest = Bod
             else:
                 return {"response": str(result)}
         
-        # Return full JSON response by default
         return result
             
     except Exception as e:
@@ -592,7 +590,15 @@ async def get_reasoning_statistics(days: int = 30):
 
 
 def _convert_chain_to_response(reasoning_chain) -> MultiHopReasoningResponse:
-    """Convert ReasoningChain to MultiHopReasoningResponse"""
+    """
+    Convert ReasoningChain to MultiHopReasoningResponse.
+    
+    Args:
+        reasoning_chain: ReasoningChain object to convert
+        
+    Returns:
+        MultiHopReasoningResponse: Converted response object
+    """
     reasoning_steps = []
     for step in reasoning_chain.steps:
         reasoning_steps.append(ReasoningStepResponse(

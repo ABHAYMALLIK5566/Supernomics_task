@@ -17,10 +17,9 @@ logger = logging.getLogger(__name__)
 
 class TextProcessor:
     """
-    Utility class for common text processing operations.
+    Text processing utilities for legal documents.
     
-    Provides reusable methods for text cleaning, formatting, and validation
-    to eliminate duplication across the application.
+    Provides methods for cleaning, formatting, and validating text content.
     """
     
     @staticmethod
@@ -37,13 +36,8 @@ class TextProcessor:
         if not text:
             return text
         
-        # Normalize multiple newlines
         cleaned_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
-        
-        # Normalize spaces and tabs
         cleaned_text = re.sub(r'[ \t]+', ' ', cleaned_text)
-        
-        # Clean line breaks
         cleaned_text = re.sub(r'\n[ \t]+', '\n', cleaned_text)
         cleaned_text = re.sub(r'[ \t]+\n', '\n', cleaned_text)
         
@@ -63,10 +57,7 @@ class TextProcessor:
         if not text:
             return text
         
-        # Fix sentence endings
         fixed_text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)
-        
-        # Fix word spacing
         fixed_text = re.sub(r'([a-z])([A-Z])', r'\1 \2', fixed_text)
         fixed_text = re.sub(r'([a-z])(\d)', r'\1 \2', fixed_text)
         fixed_text = re.sub(r'(\d)([A-Z])', r'\1 \2', fixed_text)
@@ -87,7 +78,6 @@ class TextProcessor:
         if not text:
             return text
         
-        # Format common legal references
         formatted_text = re.sub(r'Article\s+(\d+)', r'Article \1', text)
         formatted_text = re.sub(r'Section\s+(\d+)', r'Section \1', formatted_text)
         formatted_text = re.sub(r'Chapter\s+(\d+)', r'Chapter \1', formatted_text)
@@ -108,10 +98,7 @@ class TextProcessor:
         if not text:
             return text
         
-        # Normalize ellipsis
         normalized_text = re.sub(r'[.]{3,}', '...', text)
-        
-        # Normalize dashes
         normalized_text = re.sub(r'[-]{3,}', '---', normalized_text)
         
         return normalized_text
@@ -146,10 +133,7 @@ class TextProcessor:
         if not text:
             return text
         
-        # Remove page numbers
         cleaned_text = re.sub(r'Page \d+', '', text, flags=re.IGNORECASE)
-        
-        # Remove standalone numbers
         cleaned_text = re.sub(r'^\d+\s*$', '', cleaned_text, flags=re.MULTILINE)
         
         return cleaned_text
@@ -182,10 +166,9 @@ class TextProcessor:
 
 class PerformanceTimer:
     """
-    Utility class for measuring and logging performance metrics.
+    Performance timing utilities.
     
-    Provides context managers and decorators for timing operations
-    and collecting performance data.
+    Provides context managers and decorators for measuring operation duration.
     """
     
     def __init__(self, operation_name: str, logger_instance: Optional[logging.Logger] = None):
@@ -268,10 +251,9 @@ def time_operation(operation_name: str, logger_instance: Optional[logging.Logger
 
 class ValidationUtils:
     """
-    Utility class for common validation operations.
+    Data validation utilities.
     
-    Provides reusable validation methods to ensure data integrity
-    across the application.
+    Provides validation methods for ensuring data integrity.
     """
     
     @staticmethod
@@ -324,10 +306,9 @@ class ValidationUtils:
 
 class DataTransformer:
     """
-    Utility class for common data transformation operations.
+    Data transformation utilities.
     
-    Provides methods for converting between different data formats
-    and structures used throughout the application.
+    Provides methods for converting between different data formats and structures.
     """
     
     @staticmethod

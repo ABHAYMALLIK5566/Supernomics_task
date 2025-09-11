@@ -55,7 +55,11 @@ class LightweightLLMRAG:
             raise
     
     async def _load_documents_from_database(self):
-        """Load documents from database and verify embeddings"""
+        """
+        Load documents from database and verify embeddings.
+        
+        Checks document count and embedding status for initialization.
+        """
         try:
             async with db_manager.get_connection() as conn:
                 result = await conn.fetchrow("SELECT COUNT(*) as count FROM documents")
@@ -76,7 +80,15 @@ class LightweightLLMRAG:
             logger.error(f"Error loading documents from database: {e}")
     
     async def _generate_embedding(self, text: str) -> Optional[List[float]]:
-        """Generate embedding using OpenAI embedding model"""
+        """
+        Generate embedding using OpenAI embedding model.
+        
+        Args:
+            text: Text to generate embedding for
+            
+        Returns:
+            Optional[List[float]]: Generated embedding vector or None if failed
+        """
         try:
             clean_text = text.strip()
             if len(clean_text) > 8000:
@@ -94,7 +106,16 @@ class LightweightLLMRAG:
             return None
     
     async def _store_embedding(self, doc_id: int, embedding: List[float]) -> bool:
-        """Store embedding in database"""
+        """
+        Store embedding in database.
+        
+        Args:
+            doc_id: Document ID to store embedding for
+            embedding: Embedding vector to store
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
         try:
             async with db_manager.get_connection() as conn:
                 embedding_str = "[" + ",".join(map(str, embedding)) + "]"
@@ -112,7 +133,15 @@ class LightweightLLMRAG:
             return False
     
     async def _get_document_embedding(self, doc_id: int) -> Optional[List[float]]:
-        """Get document embedding from database or generate if missing"""
+        """
+        Get document embedding from database or generate if missing.
+        
+        Args:
+            doc_id: Document ID to get embedding for
+            
+        Returns:
+            Optional[List[float]]: Document embedding vector or None if failed
+        """
         try:
             async with db_manager.get_connection() as conn:
                 result = await conn.fetchrow(
@@ -140,7 +169,17 @@ class LightweightLLMRAG:
             return None
     
     async def _vector_similarity_search(self, query_embedding: List[float], top_k: int = 8, threshold: float = 0.25) -> List[Dict[str, Any]]:
-        """Perform enhanced vector similarity search with better legal document retrieval"""
+        """
+        Perform vector similarity search for legal documents.
+        
+        Args:
+            query_embedding: Query embedding vector
+            top_k: Number of top results to return
+            threshold: Minimum similarity threshold
+            
+        Returns:
+            List[Dict[str, Any]]: List of similar documents with metadata
+        """
         try:
             async with db_manager.get_connection() as conn:
                 query_embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
@@ -209,6 +248,7 @@ class LightweightLLMRAG:
         if len(docs) <= 3:
             return docs
         
+        # Group documents by source to prevent bias toward one source
         source_groups = {}
         for doc in docs:
             source = doc['metadata'].get('source', 'Unknown')
@@ -217,6 +257,7 @@ class LightweightLLMRAG:
             source_groups[source].append(doc)
         
         diverse_docs = []
+        # Prevent one source from dominating results
         max_per_source = max(1, len(docs) // len(source_groups))
         
         for source, source_docs in source_groups.items():
@@ -229,7 +270,19 @@ class LightweightLLMRAG:
     
     async def query(self, query: str, top_k: int = 8, use_agent: bool = False, 
                    algorithm: str = "hybrid", similarity_threshold: float = 0.25) -> Dict[str, Any]:
-        """Enhanced query method with conflict detection and comprehensive legal analysis"""
+        """
+        Process legal research query with RAG.
+        
+        Args:
+            query: Legal research query
+            top_k: Number of top documents to retrieve
+            use_agent: Whether to use LangChain agent
+            algorithm: Retrieval algorithm to use
+            similarity_threshold: Minimum similarity threshold
+            
+        Returns:
+            Dict[str, Any]: Query response with sources and metadata
+        """
         start_time = time.time()
         
         try:
@@ -289,7 +342,15 @@ class LightweightLLMRAG:
             }
     
     def _detect_document_conflicts(self, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Detect potential conflicts between documents on the same topic"""
+        """
+        Detect potential conflicts between documents on the same topic.
+        
+        Args:
+            docs: List of documents to analyze for conflicts
+            
+        Returns:
+            List[Dict[str, Any]]: List of detected conflicts
+        """
         conflicts = []
         
         if len(docs) < 2:
@@ -330,6 +391,7 @@ class LightweightLLMRAG:
         for pos_pattern, neg_pattern in contradiction_patterns:
             import re
             for i, content in enumerate(content_texts):
+                # Check for contradictory legal language within the same document
                 if re.search(pos_pattern, content) and re.search(neg_pattern, content):
                     conflict_indicators.append(f"Contradictory language patterns in document {docs[i]['metadata']['id']}")
         
@@ -433,36 +495,29 @@ class LightweightLLMRAG:
         if not response:
             return response
         
-        # Use utility class for basic text cleaning
         formatted_response = text_processor.clean_text_comprehensive(response)
         
-        # Apply additional formatting specific to responses
         import re
         
         # Clean up excessive asterisks and formatting - do this first
-        formatted_response = re.sub(r'\*\*', '', formatted_response)  # Remove double asterisks first
-        formatted_response = re.sub(r'\*', '', formatted_response)  # Remove single asterisks
-        formatted_response = re.sub(r'\n\s*\n\s*\n+', '\n\n', formatted_response)  # Clean up excessive newlines
+        formatted_response = re.sub(r'\*\*', '', formatted_response)
+        formatted_response = re.sub(r'\*', '', formatted_response)
+        formatted_response = re.sub(r'\n\s*\n\s*\n+', '\n\n', formatted_response)
         
-        # Format lists and sections with clean bullet points
         formatted_response = re.sub(r'\n(\d+\.)', r'\n\n\1', formatted_response)
         formatted_response = re.sub(r'\n([•\-\*])', r'\n\n\1', formatted_response)
         
-        # Format headings without excessive asterisks
         formatted_response = re.sub(r'\n([A-Z][A-Z\s]+:)\n', r'\n\n\1\n', formatted_response)
         formatted_response = re.sub(r'\n(\d+\.\s*[A-Z][^:]+:)\n', r'\n\n\1\n', formatted_response)
         
-        # Highlight legal references without asterisks
         formatted_response = re.sub(r'\b(Article|Section|Chapter)\s+(\d+)\b', r'\1 \2', formatted_response)
         
-        # Improve paragraph spacing
         formatted_response = re.sub(r'([.!?])\s*\n([A-Z])', r'\1\n\n\2', formatted_response)
         
-        # Final cleanup - remove excessive whitespace and newlines
         formatted_response = re.sub(r'\n{3,}', '\n\n', formatted_response)
         formatted_response = re.sub(r'^\s+', '', formatted_response, flags=re.MULTILINE)
-        formatted_response = re.sub(r'\s+', ' ', formatted_response)  # Replace multiple spaces with single space
-        formatted_response = re.sub(r'\n\s+', '\n', formatted_response)  # Remove leading spaces from lines
+        formatted_response = re.sub(r'\s+', ' ', formatted_response)
+        formatted_response = re.sub(r'\n\s+', '\n', formatted_response)
         
         return formatted_response.strip()
     

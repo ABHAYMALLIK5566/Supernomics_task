@@ -34,47 +34,36 @@ class ResponseFormatter:
         if not text:
             return text
         
-        # Remove JSON escape characters
         cleaned_text = text.replace('\\n', '\n')
         cleaned_text = cleaned_text.replace('\\"', '"')
         cleaned_text = cleaned_text.replace('\\\\', '\\')
         
-        # Normalize whitespace
         cleaned_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned_text)
         cleaned_text = re.sub(r'[ \t]+', ' ', cleaned_text)
         
-        # Clean up line breaks
         cleaned_text = re.sub(r'\n[ \t]+', '\n', cleaned_text)
         cleaned_text = re.sub(r'[ \t]+\n', '\n', cleaned_text)
         
-        # Fix sentence spacing
         cleaned_text = re.sub(r'([.!?])([A-Z])', r'\1 \2', cleaned_text)
         cleaned_text = re.sub(r'([a-z])([A-Z])', r'\1 \2', cleaned_text)
         
-        # Format legal references
         cleaned_text = re.sub(r'Article\s+(\d+)', r'Article \1', cleaned_text)
         cleaned_text = re.sub(r'Section\s+(\d+)', r'Section \1', cleaned_text)
         cleaned_text = re.sub(r'Chapter\s+(\d+)', r'Chapter \1', cleaned_text)
         
-        # Normalize punctuation
         cleaned_text = re.sub(r'[.]{3,}', '...', cleaned_text)
         cleaned_text = re.sub(r'[-]{3,}', '---', cleaned_text)
         
-        # Format lists and sections
         cleaned_text = re.sub(r'\n(\d+\.)', r'\n\n\1', cleaned_text)
         cleaned_text = re.sub(r'\n([•\-\*])', r'\n\n\1', cleaned_text)
         
-        # Format headings
         cleaned_text = re.sub(r'\n([A-Z][A-Z\s]+:)\n', r'\n\n**\1**\n', cleaned_text)
         cleaned_text = re.sub(r'\n(\d+\.\s*[A-Z][^:]+:)\n', r'\n\n\1\n', cleaned_text)
         
-        # Highlight legal references
         cleaned_text = re.sub(r'\b(Article|Section|Chapter)\s+(\d+)\b', r'**\1 \2**', cleaned_text)
         
-        # Improve paragraph spacing
         cleaned_text = re.sub(r'([.!?])\s*\n([A-Z])', r'\1\n\n\2', cleaned_text)
         
-        # Final cleanup
         cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)
         cleaned_text = re.sub(r'^\s+', '', cleaned_text, flags=re.MULTILINE)
         

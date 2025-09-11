@@ -70,7 +70,12 @@ class ReasoningChain:
 
 
 class QueryComplexityAnalyzer:
-    """Analyzes query complexity to determine if multi-hop reasoning is needed"""
+    """
+    Analyzes query complexity for multi-hop reasoning.
+    
+    Determines if a query requires multi-hop reasoning based on linguistic
+    indicators and legal complexity factors.
+    """
     
     COMPLEXITY_INDICATORS = {
         "multiple_concepts": [
@@ -161,13 +166,22 @@ class QueryComplexityAnalyzer:
 
 
 class QueryDecomposer:
-    """Decomposes complex queries into manageable sub-queries"""
+    """
+    Decomposes complex queries into manageable sub-queries.
+    
+    Uses OpenAI to break down complex legal queries into focused,
+    answerable sub-queries for multi-hop reasoning.
+    """
     
     def __init__(self):
         self.openai_client = None
     
     async def initialize(self):
-        """Initialize OpenAI client for query decomposition"""
+        """
+        Initialize OpenAI client for query decomposition.
+        
+        Sets up the OpenAI client with API key from settings.
+        """
         if not self.openai_client:
             import openai
             self.openai_client = openai.OpenAI(api_key=settings.openai_api_key)
@@ -216,7 +230,7 @@ Return only the sub-queries, one per line, without numbering or additional text.
             sub_queries_text = response.choices[0].message.content.strip()
             sub_queries = [q.strip() for q in sub_queries_text.split('\n') if q.strip()]
             
-            # Validate and clean sub-queries
+            # Validate and clean sub-queries - filter out invalid or too-short queries
             validated_queries = []
             for sub_query in sub_queries:
                 if len(sub_query) > 10 and '?' in sub_query:
@@ -232,7 +246,12 @@ Return only the sub-queries, one per line, without numbering or additional text.
 
 
 class MultiHopReasoningEngine:
-    """Main engine for multi-hop reasoning in legal queries"""
+    """
+    Main engine for multi-hop reasoning in legal queries.
+    
+    Orchestrates the complete multi-hop reasoning process including
+    complexity analysis, query decomposition, and result synthesis.
+    """
     
     def __init__(self):
         self.complexity_analyzer = QueryComplexityAnalyzer()
@@ -254,18 +273,15 @@ class MultiHopReasoningEngine:
         chain_id = str(uuid.uuid4())
         
         try:
-            # Step 1: Analyze query complexity
             complexity_level, analysis_details = self.complexity_analyzer.analyze_complexity(query)
             
             logger.info(f"Processing complex query with {complexity_level} complexity")
             
-            # Step 2: Decompose query if complex
             if complexity_level in [ReasoningComplexity.COMPLEX, ReasoningComplexity.VERY_COMPLEX]:
                 sub_queries = await self.query_decomposer.decompose_query(query, analysis_details)
             else:
-                sub_queries = [query]
+                sub_queries = [query]  # Simple queries don't need decomposition
             
-            # Step 3: Execute reasoning steps
             reasoning_steps = []
             all_sources = []
             all_citations = []
@@ -275,7 +291,6 @@ class MultiHopReasoningEngine:
                 step_start = time.time()
                 step_id = f"{chain_id}_step_{i+1}"
                 
-                # Execute sub-query
                 step_result = await self._execute_reasoning_step(
                     step_id, sub_query, i, len(sub_queries)
                 )
@@ -287,14 +302,11 @@ class MultiHopReasoningEngine:
                 
                 logger.info(f"Completed reasoning step {i+1}/{len(sub_queries)}")
             
-            # Step 4: Synthesize final answer
             synthesis_start = time.time()
             final_answer = await self._synthesize_final_answer(
                 query, reasoning_steps, all_sources
             )
             synthesis_time = time.time() - synthesis_start
-            
-            # Create synthesis step
             synthesis_step = ReasoningStep(
                 step_id=f"{chain_id}_synthesis",
                 step_type=ReasoningStepType.FINAL_SYNTHESIS,
@@ -309,7 +321,6 @@ class MultiHopReasoningEngine:
             
             reasoning_steps.append(synthesis_step)
             
-            # Step 5: Create reasoning chain
             total_time = time.time() - start_time
             overall_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
             
@@ -330,7 +341,6 @@ class MultiHopReasoningEngine:
                 created_at=datetime.now()
             )
             
-            # Store reasoning chain
             self.reasoning_chains[chain_id] = reasoning_chain
             
             logger.info(f"Multi-hop reasoning completed in {total_time:.2f}s with {overall_confidence:.2f} confidence")
@@ -338,7 +348,6 @@ class MultiHopReasoningEngine:
             
         except Exception as e:
             logger.error(f"Multi-hop reasoning failed: {e}")
-            # Return error reasoning chain
             return ReasoningChain(
                 chain_id=chain_id,
                 original_query=query,
@@ -354,7 +363,18 @@ class MultiHopReasoningEngine:
     
     async def _execute_reasoning_step(self, step_id: str, sub_query: str, 
                                     step_index: int, total_steps: int) -> ReasoningStep:
-        """Execute a single reasoning step"""
+        """
+        Execute a single reasoning step.
+        
+        Args:
+            step_id: Unique identifier for the step
+            sub_query: Query to process in this step
+            step_index: Index of current step
+            total_steps: Total number of steps
+            
+        Returns:
+            ReasoningStep: Completed reasoning step with results
+        """
         step_start = time.time()
         
         try:
@@ -412,7 +432,16 @@ class MultiHopReasoningEngine:
             )
     
     def _calculate_step_confidence(self, sources: List[Dict[str, Any]], response: str) -> float:
-        """Calculate confidence score for a reasoning step"""
+        """
+        Calculate confidence score for a reasoning step.
+        
+        Args:
+            sources: List of sources used in the step
+            response: Generated response text
+            
+        Returns:
+            float: Confidence score between 0.0 and 1.0
+        """
         if not sources or not response:
             return 0.0
         
@@ -436,7 +465,17 @@ class MultiHopReasoningEngine:
     async def _synthesize_final_answer(self, original_query: str, 
                                      reasoning_steps: List[ReasoningStep],
                                      all_sources: List[Dict[str, Any]]) -> str:
-        """Synthesize final answer from all reasoning steps"""
+        """
+        Synthesize final answer from all reasoning steps.
+        
+        Args:
+            original_query: The original complex query
+            reasoning_steps: List of completed reasoning steps
+            all_sources: All sources used across steps
+            
+        Returns:
+            str: Synthesized final answer
+        """
         try:
             await self.query_decomposer.initialize()
             

@@ -10,10 +10,9 @@ from typing import Optional, Dict, Any
 
 class LegalResearchException(Exception):
     """
-    Base exception class for all legal research related errors.
+    Base exception for legal research application errors.
     
-    Provides a common base for all custom exceptions with optional
-    error codes and additional context information.
+    Provides common error handling with optional error codes and context.
     """
     
     def __init__(
@@ -30,10 +29,9 @@ class LegalResearchException(Exception):
 
 class DocumentProcessingError(LegalResearchException):
     """
-    Exception raised when document processing fails.
+    Exception for document processing failures.
     
-    Used for errors during PDF ingestion, text extraction, or
-    document embedding generation.
+    Raised during PDF ingestion, text extraction, or embedding generation.
     """
     
     def __init__(
@@ -57,10 +55,9 @@ class DocumentProcessingError(LegalResearchException):
 
 class EmbeddingGenerationError(LegalResearchException):
     """
-    Exception raised when vector embedding generation fails.
+    Exception for vector embedding generation failures.
     
-    Used for errors during OpenAI API calls for embedding generation
-    or when embeddings cannot be stored in the database.
+    Raised during OpenAI API calls or database storage issues.
     """
     
     def __init__(
@@ -84,10 +81,9 @@ class EmbeddingGenerationError(LegalResearchException):
 
 class DatabaseConnectionError(LegalResearchException):
     """
-    Exception raised when database operations fail.
+    Exception for database operation failures.
     
-    Used for connection issues, query failures, or database
-    initialization problems.
+    Raised for connection issues, query failures, or initialization problems.
     """
     
     def __init__(
@@ -111,10 +107,9 @@ class DatabaseConnectionError(LegalResearchException):
 
 class CacheOperationError(LegalResearchException):
     """
-    Exception raised when cache operations fail.
+    Exception for cache operation failures.
     
-    Used for Redis connection issues, cache key generation problems,
-    or cache serialization/deserialization errors.
+    Raised for Redis connection issues, key generation, or serialization errors.
     """
     
     def __init__(
@@ -138,10 +133,9 @@ class CacheOperationError(LegalResearchException):
 
 class LegalAgentError(LegalResearchException):
     """
-    Exception raised when the legal agent encounters errors.
+    Exception for legal agent failures.
     
-    Used for LangChain agent failures, tool execution errors,
-    or agent initialization problems.
+    Raised for LangChain agent failures, tool execution errors, or initialization issues.
     """
     
     def __init__(
@@ -165,10 +159,9 @@ class LegalAgentError(LegalResearchException):
 
 class QueryProcessingError(LegalResearchException):
     """
-    Exception raised when query processing fails.
+    Exception for query processing failures.
     
-    Used for errors during query validation, embedding generation,
-    or response generation.
+    Raised during query validation, embedding generation, or response generation.
     """
     
     def __init__(
@@ -192,9 +185,9 @@ class QueryProcessingError(LegalResearchException):
 
 class RateLimitExceededError(LegalResearchException):
     """
-    Exception raised when rate limits are exceeded.
+    Exception for rate limit violations.
     
-    Used for API rate limiting and request throttling scenarios.
+    Raised when API rate limits or request throttling limits are exceeded.
     """
     
     def __init__(
@@ -221,10 +214,9 @@ class RateLimitExceededError(LegalResearchException):
 
 class ConfigurationError(LegalResearchException):
     """
-    Exception raised when configuration is invalid or missing.
+    Exception for configuration errors.
     
-    Used for missing environment variables, invalid settings,
-    or configuration validation failures.
+    Raised for missing environment variables, invalid settings, or validation failures.
     """
     
     def __init__(

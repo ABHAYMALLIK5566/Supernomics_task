@@ -19,7 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
-    """Manages PostgreSQL database connections"""
+    """
+    PostgreSQL database connection manager.
+    
+    Handles connection pooling, query execution, and database health monitoring
+    for the legal research application.
+    """
     
     def __init__(self):
         self._pool: Optional[asyncpg.Pool] = None
@@ -27,7 +32,12 @@ class DatabaseManager:
         self._initialized = False
     
     async def initialize(self):
-        """Initialize the database connection"""
+        """
+        Initialize the database connection pool.
+        
+        Sets up PostgreSQL connection pool with configured parameters.
+        Safe to call multiple times.
+        """
         if self._initialized:
             return
             
@@ -39,7 +49,11 @@ class DatabaseManager:
             self._initialized = True
     
     async def _initialize_postgres(self):
-        """Initialize PostgreSQL for production"""
+        """
+        Initialize PostgreSQL connection pool.
+        
+        Creates connection pool with vector extension support.
+        """
         if self._pool is None:
             try:
                 import urllib.parse
@@ -68,7 +82,11 @@ class DatabaseManager:
                 raise
     
     async def close(self):
-        """Close the database connection"""
+        """
+        Close the database connection pool.
+        
+        Properly closes all connections and cleans up resources.
+        """
         if self._pool:
             await self._pool.close()
             self._pool = None
@@ -76,31 +94,68 @@ class DatabaseManager:
     
     @asynccontextmanager
     async def get_connection(self):
-        """Get a database connection"""
+        """
+        Get a database connection from the pool.
+        
+        Yields:
+            asyncpg.Connection: Database connection for query execution
+        """
         if self._pool is None:
             await self.initialize()
         async with self._pool.acquire() as connection:
             yield connection
     
     async def execute_query(self, query: str, *args) -> List[Dict[str, Any]]:
-        """Execute a query and return results as list of dictionaries"""
+        """
+        Execute a SELECT query and return results.
+        
+        Args:
+            query: SQL query string
+            *args: Query parameters
+            
+        Returns:
+            List[Dict[str, Any]]: Query results as list of dictionaries
+        """
         async with self.get_connection() as conn:
             rows = await conn.fetch(query, *args)
             return [dict(row) for row in rows]
     
     async def execute_one(self, query: str, *args) -> Optional[Dict[str, Any]]:
-        """Execute a query and return one result as dictionary"""
+        """
+        Execute a query and return single result.
+        
+        Args:
+            query: SQL query string
+            *args: Query parameters
+            
+        Returns:
+            Optional[Dict[str, Any]]: Single result as dictionary, or None if no results
+        """
         async with self.get_connection() as conn:
             row = await conn.fetchrow(query, *args)
             return dict(row) if row else None
     
     async def execute_command(self, query: str, *args) -> str:
-        """Execute a command (INSERT, UPDATE, DELETE) and return status"""
+        """
+        Execute a command query (INSERT, UPDATE, DELETE).
+        
+        Args:
+            query: SQL command string
+            *args: Query parameters
+            
+        Returns:
+            str: Command execution status
+        """
         async with self.get_connection() as conn:
             return await conn.execute(query, *args)
     
     async def health_check(self) -> bool:
-        """Check if database is healthy"""
+        """
+        Check database connection health.
+        
+        Returns:
+            bool: True if database is accessible, False otherwise
+        """
         try:
             async with self.get_connection() as conn:
                 await conn.fetchval("SELECT 1")
@@ -113,11 +168,20 @@ db_manager = DatabaseManager()
 
 @lru_cache()
 def get_database_manager() -> DatabaseManager:
-    """Get the global database manager instance"""
+    """
+    Get the global database manager instance.
+    
+    Returns:
+        DatabaseManager: Cached database manager instance
+    """
     return db_manager
 
 async def init_database():
-    """Initialize database tables and indexes"""
+    """
+    Initialize database schema and indexes.
+    
+    Creates required tables, indexes, and vector extensions for the application.
+    """
     try:
         await _init_postgres_database()
         pass
@@ -127,7 +191,11 @@ async def init_database():
         raise
 
 async def _init_postgres_database():
-    """Initialize PostgreSQL database schema"""
+    """
+    Initialize PostgreSQL database schema.
+    
+    Creates tables, indexes, and vector extensions for document storage and retrieval.
+    """
     import asyncpg
     conn = await asyncpg.connect(settings.database_url)
     
@@ -200,7 +268,11 @@ async def _init_postgres_database():
 
 
 async def create_hnsw_index():
-    """Create HNSW index for vector similarity search (call after inserting data)"""
+    """
+    Create HNSW index for vector similarity search.
+    
+    Should be called after inserting data for optimal performance.
+    """
     try:
         async with db_manager.get_connection() as conn:
             await conn.execute("""
