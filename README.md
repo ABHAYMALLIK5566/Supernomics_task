@@ -633,7 +633,6 @@ Supernomics_task/
 ├── env.example                  # Environment variables template
 ├── requirements.txt             # Python dependencies
 ├── test_multi_hop_reasoning.py  # Multi-hop reasoning tests
-├── MULTI_HOP_REASONING.md       # Multi-hop reasoning documentation
 └── README.md                    # This file
 ```
 
