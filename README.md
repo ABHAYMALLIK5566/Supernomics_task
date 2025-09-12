@@ -597,35 +597,6 @@ print(f"Response: {result['response']}")
 print(f"Sources: {len(result['context'])} documents found")
 ```
 
-#### JavaScript/Node.js Integration
-```javascript
-const axios = require('axios');
-
-const API_BASE = 'http://localhost:8001';
-
-async function queryLegalSystem(query, useAgent = true, topK = 5) {
-    try {
-        const response = await axios.post(`${API_BASE}/query`, {
-            query: query,
-            use_agent: useAgent,
-            top_k: topK
-        });
-        return response.data;
-    } catch (error) {
-        console.error('Error querying legal system:', error.message);
-        throw error;
-    }
-}
-
-// Example usage
-queryLegalSystem("What are the requirements for a valid will?")
-    .then(result => {
-        console.log('Response:', result.response);
-        console.log('Sources found:', result.context.length);
-    })
-    .catch(error => console.error('Error:', error));
-```
-
 #### Batch Processing Example
 ```bash
 # Process multiple queries in batch
