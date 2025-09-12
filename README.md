@@ -394,7 +394,7 @@ nproc
 
 ### 1. Clone and Setup
 ```bash
-git clone <repository-url>
+git clone https://github.com/ABHAYMALLIK5566/Supernomics_task
 cd RAG_task
 cp env.example .env
 ```
